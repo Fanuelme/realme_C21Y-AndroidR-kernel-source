@@ -1,0 +1,234 @@
+name: Kernel Build
+
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      defconfig:
+        description: 'Kernel defconfig name (e.g., your_device_defconfig, msm-perf_defconfig)'
+        required: true
+        default: 'rmx3263_defconfig' # You NEED to replace this with your actual defconfig
+
+jobs:
+  build:
+    runs-on: ubuntu-latest # Using a fresh Ubuntu environment for each build
+
+    env:
+      # These environment variables are consistent across all steps in this job
+      KERNEL_ROOT: ${{ github.workspace }} # GitHub Actions sets this to the root of your repo
+      ARCH: arm64
+      KBUILD_BUILD_USER: '@ravindu644' # Your custom build user
+      # Paths to the toolchains
+      CLANG_BASE: ${{ github.workspace }}/toolchains/clang-r383902b
+      GCC_BASE: ${{ github.workspace }}/toolchains/gcc
+      GCC_64_PATH: ${{ github.workspace }}/toolchains/gcc/bin/aarch64-none-linux-gnu-
+      
+      # Specific compiler paths
+      CROSS_COMPILE: ${{ github.workspace }}/toolchains/gcc/bin/aarch64-none-linux-gnu-
+      BSP_KERNEL_CROSS_COMPILE: ${{ github.workspace }}/toolchains/gcc/bin/aarch64-none-linux-gnu-
+      CROSS_COMPILE_ARM32: ${{ github.workspace }}/toolchains/gcc/bin/arm-none-linux-gnueabi-
+      CC: ${{ github.workspace }}/toolchains/clang-r383902b/bin/clang
+      BSP_BUILD_DT_OVERLAY: "y"
+      BSP_BUILD_ANDROID_OS: "y"
+      BSP_BUILD_FAMILY: "sharkl5Pro"
+      BSP_BOARD_CAMERA_MODULE_ISP_VERSION: "isp2.6"
+      BSP_BOARD_CAMERA_MODULE_CSI_VERSION: "csi_2.0"
+      BSP_BOARD_CAMERA_MODULE_ISP_ADAPT_VERSION: "sharkl5pro"
+      BSP_BOARD_NAME: "sharkl5pro"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true # Initializes and updates submodules as per your script
+
+      - name: Create build directories
+        run: |
+          echo "[INFO]: Creating build directories..."
+          mkdir -p "${{ github.workspace }}/out" "${{ github.workspace }}/build" "${{ github.workspace }}/toolchains"
+
+      - name: Cache Toolchains
+        id: cache-toolchains
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/toolchains # Cache directory for toolchains
+          key: ${{ runner.os }}-toolchains-v2 # Cache key. Increment 'v2' if you change toolchain URLs
+
+      - name: Setup System Dependencies
+        run: |
+          echo "[INFO]: Installing system requirements..."
+          sudo apt update
+          sudo apt install -y git device-tree-compiler lz4 xz-utils zlib1g-dev openjdk-17-jdk gcc g++ python3 python-is-python3 p7zip-full android-sdk-libsparse-utils erofs-utils \
+              default-jdk git gnupg flex bison gperf build-essential zip curl libc6-dev libncurses-dev libx11-dev libreadline-dev libgl1 libgl1-mesa-dev \
+              python3 make sudo gcc g++ bc grep tofrodos python3-markdown libxml2-utils xsltproc zlib1g-dev python-is-python3 libc6-dev libtinfo6 \
+              make repo cpio kmod openssl libelf-dev pahole libssl-dev libarchive-tools zstd libyaml-dev --fix-missing
+
+          # Specific dependency for libtinfo5 as in your script
+          wget http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb
+          sudo dpkg -i libtinfo5_6.3-2ubuntu0.1_amd64.deb
+          rm libtinfo5_6.3-2ubuntu0.1_amd64.deb # Clean up the downloaded .deb file
+          
+          # Verify libyaml-dev is properly installed
+          echo "Verifying libyaml-dev installation..."
+          dpkg -l | grep libyaml-dev
+          
+          # Create a symlink to ensure libyaml is found during build
+          sudo ln -sf /usr/lib/x86_64-linux-gnu/libyaml.so /usr/lib/libyaml.so
+          sudo ldconfig
+
+      - name: Download and Set up Clang
+        # Only run this step if toolchains are NOT cached
+        if: steps.cache-toolchains.outputs.cache-hit != 'true'
+        run: |
+          echo "[INFO] Setting up clang-r383902b..."
+          mkdir -p "${{ env.CLANG_BASE }}"
+          cd "${{ github.workspace }}/toolchains"
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/0e9e7035bf8ad42437c6156e5950eab13655b26c/clang-r383902b.tar.gz -O clang.tar.gz
+          tar -xf clang.tar.gz -C clang-r383902b
+          rm clang.tar.gz
+          # Verify clang is extracted correctly
+          if [ ! -f "${{ env.CLANG_BASE }}/bin/clang" ]; then
+            echo "ERROR: Clang extraction failed. Clang binary not found at ${{ env.CLANG_BASE }}/bin/clang"
+            exit 1
+          fi
+          echo "Clang setup complete. Clang version:"
+          ${{ env.CLANG_BASE }}/bin/clang --version
+
+      - name: Download and Set up ARM GNU Toolchain
+        # Only run this step if toolchains are NOT cached
+        if: steps.cache-toolchains.outputs.cache-hit != 'true'
+        run: |
+          echo "[INFO] Setting up ARM GNU Toolchain..."
+          cd "${{ github.workspace }}/toolchains"
+          
+          # Use a more stable and compatible version of the toolchain
+          wget -q https://developer.arm.com/-/media/Files/downloads/gnu-a/10.3-2021.07/binrel/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu.tar.xz -O gcc.tar.xz
+          mkdir -p gcc
+          tar -xf gcc.tar.xz --strip-components=1 -C gcc
+          rm gcc.tar.xz
+          
+          # Verify GCC is extracted correctly
+          if [ ! -f "${{ env.GCC_BASE }}/bin/aarch64-none-linux-gnu-gcc" ]; then
+            echo "ERROR: GCC extraction failed. GCC binary not found at ${{ env.GCC_BASE }}/bin/aarch64-none-linux-gnu-gcc"
+            exit 1
+          fi
+          echo "GCC setup complete. GCC version:"
+          ${{ env.GCC_BASE }}/bin/aarch64-none-linux-gnu-gcc --version
+          
+          # Make sure binaries are executable
+          chmod +x ${{ env.GCC_BASE }}/bin/*
+          chmod +x ${{ env.CLANG_BASE }}/bin/*
+
+      - name: Set up PATH for toolchains
+        run: |
+          echo "${{ env.CLANG_BASE }}/bin" >> $GITHUB_PATH
+          echo "${{ env.GCC_BASE }}/bin" >> $GITHUB_PATH
+          echo "LD_LIBRARY_PATH=${{ env.CLANG_BASE }}/lib:${{ env.CLANG_BASE }}/lib64:/usr/lib:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+
+      - name: Verify toolchain availability
+        run: |
+          echo "Checking if toolchain binaries are available..."
+          if [ -f "${{ env.GCC_BASE }}/bin/aarch64-none-linux-gnu-ld" ]; then
+            echo "aarch64-none-linux-gnu-ld found"
+          else
+            echo "ERROR: aarch64-none-linux-gnu-ld not found"
+            ls -la "${{ env.GCC_BASE }}/bin/"
+            exit 1
+          fi
+          
+          if [ -f "${{ env.CLANG_BASE }}/bin/clang" ]; then
+            echo "clang found"
+          else
+            echo "ERROR: clang not found"
+            ls -la "${{ env.CLANG_BASE }}/bin/"
+            exit 1
+          fi
+          
+          # Verify LLD is available
+          if [ -f "${{ env.CLANG_BASE }}/bin/ld.lld" ]; then
+            echo "ld.lld found"
+          else
+            echo "ERROR: ld.lld not found"
+            ls -la "${{ env.CLANG_BASE }}/bin/"
+            exit 1
+          fi
+          
+          # Verify libyaml is properly linked
+          echo "Checking libyaml library..."
+          if [ -f "/usr/lib/libyaml.so" ]; then
+            echo "libyaml.so found at /usr/lib/libyaml.so"
+          else
+            echo "WARNING: libyaml.so not found at /usr/lib/libyaml.so"
+            ls -la /usr/lib/x86_64-linux-gnu/libyaml*
+          fi
+
+      - name: Patch DTC Makefile for YAML
+        run: |
+          echo "Patching scripts/dtc/Makefile to properly link libyaml..."
+          # Find the DTC Makefile
+          DTC_MAKEFILE=$(find "${{ github.workspace }}" -name "Makefile" -path "*/scripts/dtc/*" | head -n 1 )
+          
+          if [ -n "$DTC_MAKEFILE" ]; then
+            echo "Found DTC Makefile at: $DTC_MAKEFILE"
+            # Make a backup
+            cp "$DTC_MAKEFILE" "${DTC_MAKEFILE}.bak"
+            
+            # Add -lyaml to the HOSTLDLIBS in the Makefile
+            if grep -q "HOSTLDLIBS" "$DTC_MAKEFILE"; then
+              sed -i 's/\(HOSTLDLIBS\s*=\s*\)\(.*\)/\1\2 -lyaml/' "$DTC_MAKEFILE"
+            else
+              echo "HOSTLDLIBS = -lyaml" >> "$DTC_MAKEFILE"
+            fi
+            
+            echo "Modified DTC Makefile:"
+            cat "$DTC_MAKEFILE" | grep -A 3 HOSTLDLIBS
+          else
+            echo "WARNING: Could not find DTC Makefile to patch"
+          fi
+
+      - name: Build Kernel
+        run: |
+          echo -e "\n[INFO]: BUILD STARTED..!\n"
+
+          
+          # Make default configuration using the input defconfig
+          make -C "${{ github.workspace }}" \
+            O="${{ github.workspace }}/out" \
+            ARCH=${{ env.ARCH }} \
+            ${{ inputs.defconfig }} || { echo "Defconfig generation failed!"; exit 1; }
+            
+          # Explicitly set HOSTLDLIBS to include libyaml
+          export HOSTLDLIBS="-lyaml"
+
+          # Build the kernel with explicit paths and compatible flags
+          # Now using LLD instead of GNU ld
+          make -C "${{ github.workspace }}" \
+            O="${{ github.workspace }}/out" \
+            -j$(nproc) \
+            ARCH=${{ env.ARCH }} \
+            CROSS_COMPILE=${{ env.CROSS_COMPILE }} \
+            CC=${{ env.CC }} \
+            LD=${{ env.CLANG_BASE }}/bin/ld.lld \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            BSP_BUILD_ANDROID_OS=${BSP_BUILD_ANDROID_OS} \
+            BSP_BUILD_FAMILY=${BSP_BUILD_FAMILY} \
+            BSP_BUILD_DT_OVERLAY=${BSP_BUILD_DT_OVERLAY} \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            HOSTLDLIBS="-lyaml" \
+            Image || { echo "Kernel build failed!"; exit 1; }
+
+          echo -e "\n[INFO]: BUILD FINISHED..!"
+
+      - name: Copy built Image
+        run: |
+          # Copy the built kernel to the build directory with a unique name
+          cp "${{ github.workspace }}/out/arch/${{ env.ARCH }}/boot/Image" "${{ github.workspace }}/build/Image-${{ github.run_id }}.img"
+          echo "Kernel Image copied to: ${{ github.workspace }}/build/Image-${{ github.run_id }}.img"
+
+      - name: Upload Kernel Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-image-${{ github.run_id }} # Name of the artifact for download
+          path: ${{ github.workspace }}/build/Image-${{ github.run_id }}.img # Path to the file to upload
+          retention-days: 7 # How long to keep the artifact (optional, default is 90)
