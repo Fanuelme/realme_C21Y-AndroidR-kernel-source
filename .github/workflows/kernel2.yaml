@@ -1,0 +1,145 @@
+name: Kernel Build
+
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      defconfig:
+        description: 'Kernel defconfig name (e.g., your_device_defconfig, msm-perf_defconfig)'
+        required: true
+        default: 'rmx3263_defconfig' # You NEED to replace this with your actual defconfig
+
+jobs:
+  build:
+    runs-on: ubuntu-latest # Using a fresh Ubuntu environment for each build
+
+    env:
+      # These environment variables are consistent across all steps in this job
+      KERNEL_ROOT: ${{ github.workspace }} # GitHub Actions sets this to the root of your repo
+      ARCH: arm64
+      KBUILD_BUILD_USER: '@ravindu644' # Your custom build user
+      # Paths to the toolchains
+      CLANG_BASE: ${{ github.workspace }}/toolchains/clang-r383902b
+      GCC_BASE: ${{ github.workspace }}/toolchains/gcc
+      
+      # Specific compiler paths
+      CROSS_COMPILE: ${{ github.workspace }}/toolchains/gcc/bin/aarch64-none-linux-gnu-
+      BSP_KERNEL_CROSS_COMPILE: ${{ github.workspace }}/toolchains/gcc/bin/aarch64-none-linux-gnu-
+      CC: ${{ github.workspace }}/toolchains/clang-r383902b/bin/clang
+      
+      # Board-specific properties from your original script
+      BSP_BUILD_DT_OVERLAY: "y"
+      BSP_BUILD_ANDROID_OS: "y"
+      BSP_BUILD_FAMILY: "sharkl5Pro"
+      BSP_BOARD_NAME: "sharkl5pro"
+
+      # === VDSP DRIVER VARIABLE (NEW) ===
+      # This is required by the VDSP Kbuild file to find its sources.
+      # !! YOU MUST VERIFY THIS VALUE FOR YOUR DEVICE !!
+      BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE: "sharkl5pro" 
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Create build directories
+        run: |
+          echo "[INFO]: Creating build directories..."
+          mkdir -p "${{ github.workspace }}/out" "${{ github.workspace }}/build" "${{ github.workspace }}/toolchains" "${{ github.workspace }}/modules_out"
+
+      - name: Cache Toolchains
+        id: cache-toolchains
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/toolchains
+          key: ${{ runner.os }}-toolchains-v2
+
+      - name: Setup System Dependencies
+        run: |
+          echo "[INFO]: Installing system requirements..."
+          sudo apt update
+          sudo apt install -y git device-tree-compiler lz4 xz-utils zlib1g-dev zip make gcc g++ python3 python-is-python3 libncurses-dev flex bison libssl-dev libelf-dev kmod pahole zstd libyaml-dev
+          # Create a symlink to ensure libyaml is found during build
+          sudo ln -sf /usr/lib/x86_64-linux-gnu/libyaml.so /usr/lib/libyaml.so
+          sudo ldconfig
+
+      - name: Download and Set up Toolchains
+        if: steps.cache-toolchains.outputs.cache-hit != 'true'
+        run: |
+          echo "[INFO] Setting up Clang..."
+          mkdir -p "${{ env.CLANG_BASE }}"
+          cd "${{ github.workspace }}/toolchains"
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/0e9e7035bf8ad42437c6156e5950eab13655b26c/clang-r383902b.tar.gz -O clang.tar.gz
+          tar -xf clang.tar.gz -C clang-r383902b && rm clang.tar.gz
+
+          echo "[INFO] Setting up ARM GNU Toolchain..."
+          wget -q https://developer.arm.com/-/media/Files/downloads/gnu-a/10.3-2021.07/binrel/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu.tar.xz -O gcc.tar.xz
+          mkdir -p gcc && tar -xf gcc.tar.xz --strip-components=1 -C gcc && rm gcc.tar.xz
+
+          chmod +x ${{ env.GCC_BASE }}/bin/*
+          chmod +x ${{ env.CLANG_BASE }}/bin/*
+
+      - name: Set up PATH for toolchains
+        run: |
+          echo "${{ env.CLANG_BASE }}/bin" >> $GITHUB_PATH
+          echo "${{ env.GCC_BASE }}/bin" >> $GITHUB_PATH
+
+      - name: Build Kernel and All Modules
+        run: |
+          echo -e "\n[INFO]: KERNEL BUILD STARTED..!\n"
+          
+          # Make default configuration
+          make -C "${{ github.workspace }}" O="${{ github.workspace }}/out" ARCH=${{ env.ARCH }} ${{ inputs.defconfig }} || { echo "Defconfig failed!"; exit 1; }
+            
+          # Build the kernel Image and all modules (including Mali and VDSP drivers)
+          # We pass all required custom variables directly to this single make command.
+          make -C "${{ github.workspace }}" \
+            O="${{ github.workspace }}/out" \
+            -j$(nproc) \
+            ARCH=${{ env.ARCH }} \
+            CROSS_COMPILE=${{ env.CROSS_COMPILE }} \
+            CC=${{ env.CC }} \
+            LD=${{ env.CLANG_BASE }}/bin/ld.lld \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            BSP_BUILD_ANDROID_OS=${BSP_BUILD_ANDROID_OS} \
+            BSP_BUILD_FAMILY=${BSP_BUILD_FAMILY} \
+            BSP_BUILD_DT_OVERLAY=${BSP_BUILD_DT_OVERLAY} \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            HOSTLDLIBS="-lyaml" \
+            CONFIG_MALI_PLATFORM_NAME=${{ env.BSP_BOARD_NAME }} \
+            CONFIG_MALI_BOARD_PLATFORM=${{ env.BSP_BOARD_NAME }} \
+            BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE=${{ env.BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE }} \
+            Image modules || { echo "Kernel and modules build failed!"; exit 1; }
+
+          echo -e "\n[INFO]: KERNEL BUILD FINISHED..!"
+
+      - name: Install All Kernel Modules
+        run: |
+          echo "[INFO]: Installing all compiled kernel modules..."
+          make -C "${{ github.workspace }}/out" \
+            ARCH=${{ env.ARCH }} \
+            INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" \
+            modules_install || { echo "Module installation failed!"; exit 1; }
+
+      - name: Package Kernel and Modules
+        run: |
+          echo "[INFO]: Packaging kernel artifacts..."
+          # Copy the kernel image to the final build directory
+          cp "${{ github.workspace }}/out/arch/${{ env.ARCH }}/boot/Image" "${{ github.workspace }}/build/Image"
+          
+          # Zip all installed modules
+          cd "${{ github.workspace }}/modules_out"
+          zip -r9 "${{ github.workspace }}/build/modules-${{ github.run_id }}.zip" ./*
+          
+          echo "Kernel Image and Modules ZIP are ready in the 'build' directory."
+          ls -lR ${{ github.workspace }}/build
+
+      - name: Upload Kernel Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-build-${{ github.run_id }}
+          path: ${{ github.workspace }}/build/*
+          retention-days: 7
