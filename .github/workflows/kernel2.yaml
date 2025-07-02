@@ -15,9 +15,9 @@ jobs:
 
     env:
       # These environment variables are consistent across all steps in this job
-      KERNEL_ROOT: ${{ github.workspace }} # GitHub Actions sets this to the root of your repo
+      KERNEL_ROOT: ${{ github.workspace }}
       ARCH: arm64
-      KBUILD_BUILD_USER: '@ravindu644' # Your custom build user
+      KBUILD_BUILD_USER: '@ravindu644'
       # Paths to the toolchains
       CLANG_BASE: ${{ github.workspace }}/toolchains/clang-r383902b
       GCC_BASE: ${{ github.workspace }}/toolchains/gcc
@@ -33,9 +33,7 @@ jobs:
       BSP_BUILD_FAMILY: "sharkl5Pro"
       BSP_BOARD_NAME: "sharkl5pro"
 
-      # === VDSP DRIVER VARIABLE (NEW) ===
-      # This is required by the VDSP Kbuild file to find its sources.
-      # !! YOU MUST VERIFY THIS VALUE FOR YOUR DEVICE !!
+      # VDSP DRIVER VARIABLE
       BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE: "sharkl5pro" 
 
     steps:
@@ -61,7 +59,6 @@ jobs:
           echo "[INFO]: Installing system requirements..."
           sudo apt update
           sudo apt install -y git device-tree-compiler lz4 xz-utils zlib1g-dev zip make gcc g++ python3 python-is-python3 libncurses-dev flex bison libssl-dev libelf-dev kmod pahole zstd libyaml-dev
-          # Create a symlink to ensure libyaml is found during build
           sudo ln -sf /usr/lib/x86_64-linux-gnu/libyaml.so /usr/lib/libyaml.so
           sudo ldconfig
 
@@ -90,11 +87,8 @@ jobs:
         run: |
           echo -e "\n[INFO]: KERNEL BUILD STARTED..!\n"
           
-          # Make default configuration
           make -C "${{ github.workspace }}" O="${{ github.workspace }}/out" ARCH=${{ env.ARCH }} ${{ inputs.defconfig }} || { echo "Defconfig failed!"; exit 1; }
             
-          # Build the kernel Image and all modules (including Mali and VDSP drivers)
-          # We pass all required custom variables directly to this single make command.
           make -C "${{ github.workspace }}" \
             O="${{ github.workspace }}/out" \
             -j$(nproc) \
@@ -104,11 +98,11 @@ jobs:
             LD=${{ env.CLANG_BASE }}/bin/ld.lld \
             LLVM=1 \
             LLVM_IAS=1 \
-            BSP_BUILD_ANDROID_OS=${BSP_BUILD_ANDROID_OS} \
-            BSP_BUILD_FAMILY=${BSP_BUILD_FAMILY} \
-            BSP_BUILD_DT_OVERLAY=${BSP_BUILD_DT_OVERLAY} \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             HOSTLDLIBS="-lyaml" \
+            BSP_BUILD_ANDROID_OS=${{ env.BSP_BUILD_ANDROID_OS }} \
+            BSP_BUILD_FAMILY=${{ env.BSP_BUILD_FAMILY }} \
+            BSP_BUILD_DT_OVERLAY=${{ env.BSP_BUILD_DT_OVERLAY }} \
             CONFIG_MALI_PLATFORM_NAME=${{ env.BSP_BOARD_NAME }} \
             CONFIG_MALI_BOARD_PLATFORM=${{ env.BSP_BOARD_NAME }} \
             BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE=${{ env.BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE }} \
@@ -130,9 +124,19 @@ jobs:
           # Copy the kernel image to the final build directory
           cp "${{ github.workspace }}/out/arch/${{ env.ARCH }}/boot/Image" "${{ github.workspace }}/build/Image"
           
-          # Zip all installed modules
+          # Navigate to the modules directory
           cd "${{ github.workspace }}/modules_out"
-          zip -r9 "${{ github.workspace }}/build/modules-${{ github.run_id }}.zip" ./*
+          
+          # !! THIS IS THE FIX !!
+          # Remove the recursive 'source' and 'build' symlinks before zipping.
+          # The find command is robust and will delete them wherever they are.
+          echo "[INFO]: Removing problematic 'source' and 'build' symlinks to prevent zip recursion..."
+          find . -type l -name "source" -delete
+          find . -type l -name "build" -delete
+          
+          # Zip all the actual module files
+          echo "[INFO]: Zipping modules..."
+          zip -r9 "${{ github.workspace }}/build/modules-${{ github.run_id }}.zip" .
           
           echo "Kernel Image and Modules ZIP are ready in the 'build' directory."
           ls -lR ${{ github.workspace }}/build
