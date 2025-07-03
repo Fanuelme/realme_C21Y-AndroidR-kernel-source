@@ -120,6 +120,8 @@ jobs:
           make -C "${{ github.workspace }}" \
             O="${{ github.workspace }}/out" \
             -j$(nproc) \
+            LLVM=1 \
+            LLVM_IAS=1 \
             ARCH="${{ env.ARCH }}" \
             CC="${{ env.CC }}" \
             LD="ld.lld" \
@@ -162,9 +164,9 @@ jobs:
             export BSP_KERNEL_PATH="${{ github.workspace }}/out"
             export BSP_MODULES_OUT="${{ github.workspace }}/out"
             
-            # CRITICAL FIX: Pass all compiler variables to the out-of-tree make command
-            # to ensure it uses Clang and the correct toolchain.
             make -C "$TCS_DRIVER_PATH" \
+              LLVM=1 \
+              LLVM_IAS=1 \
               ARCH="${{ env.ARCH }}" \
               CC="${{ env.CC }}" \
               LD="ld.lld" \
@@ -178,7 +180,6 @@ jobs:
               CLANG_TRIPLE="aarch64-linux-gnu-" \
               modules
 
-            # The install step just copies files, so it doesn't need all the flags.
             make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/tcs3430" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
             echo "--> TCS3430 driver installed."
           else
