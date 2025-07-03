@@ -44,6 +44,8 @@ jobs:
       BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE: "Cadence"
       BSP_BOARD_UNISOC_WCN_SOCKET: "sdio"
       BSP_BOARD_WLAN_DEVICE: "sc2355"
+      # You may need to adjust this value based on your device's configuration
+      MALI_VOLTAGE_LEVEL: "1"
 
     steps:
       - name: Checkout repository
@@ -136,8 +138,6 @@ jobs:
             BSP_BUILD_ANDROID_OS="${{ env.BSP_BUILD_ANDROID_OS }}" \
             BSP_BUILD_FAMILY="${{ env.BSP_BUILD_FAMILY }}" \
             BSP_BUILD_DT_OVERLAY="${{ env.BSP_BUILD_DT_OVERLAY }}" \
-            CONFIG_MALI_PLATFORM_NAME="${{ env.BSP_BOARD_NAME }}" \
-            CONFIG_MALI_BOARD_PLATFORM="${{ env.BSP_BOARD_NAME }}" \
             BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE="${{ env.BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE }}" \
             BSP_BOARD_UNISOC_WCN_SOCKET="${{ env.BSP_BOARD_UNISOC_WCN_SOCKET }}" \
             BSP_BOARD_WLAN_DEVICE="${{ env.BSP_BOARD_WLAN_DEVICE }}" \
@@ -158,28 +158,42 @@ jobs:
         run: |
           echo "[INFO]: Checking for and building known out-of-tree modules..."
           
+          # Common variables for out-of-tree modules
+          export BSP_KERNEL_PATH="${{ github.workspace }}/out"
+          export BSP_MODULES_OUT="${{ github.workspace }}/out"
+          
+          # --- Mali GPU Driver ---
+          MALI_DRIVER_PATH="${{ github.workspace }}/drivers/modules/kernel4.14/gpu/gondul"
+          if [ -f "$MALI_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found Mali Makefile, building..."
+            make -C "$MALI_DRIVER_PATH" \
+              LLVM=1 LLVM_IAS=1 \
+              ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              MALI_PLATFORM_NAME="${{ env.BSP_BOARD_NAME }}" \
+              TARGET_BOARD_PLATFORM="${{ env.BSP_BOARD_NAME }}" \
+              TARGET_BOARD="${{ env.BSP_BOARD_NAME }}" \
+              VOLTAGE_CONTROLLER_LEVEL="${{ env.MALI_VOLTAGE_LEVEL }}" \
+              modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/mali_gondul" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> Mali driver installed."
+          else
+            echo "--> Mali Makefile not found, skipping."
+          fi
+
+          # --- TCS3430 Sensor Driver ---
           TCS_DRIVER_PATH="${{ github.workspace }}/drivers/modules/kernel4.14/input/misc/tcs3430"
           if [ -f "$TCS_DRIVER_PATH/Makefile" ]; then
             echo "--> Found TCS3430 Makefile, building..."
-            export BSP_KERNEL_PATH="${{ github.workspace }}/out"
-            export BSP_MODULES_OUT="${{ github.workspace }}/out"
-            
             make -C "$TCS_DRIVER_PATH" \
-              LLVM=1 \
-              LLVM_IAS=1 \
-              ARCH="${{ env.ARCH }}" \
-              CC="${{ env.CC }}" \
-              LD="ld.lld" \
-              AR="llvm-ar" \
-              NM="llvm-nm" \
-              OBJCOPY="llvm-objcopy" \
-              OBJDUMP="llvm-objdump" \
-              STRIP="llvm-strip" \
-              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" \
-              CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              LLVM=1 LLVM_IAS=1 \
+              ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
               CLANG_TRIPLE="aarch64-linux-gnu-" \
               modules
-
             make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/tcs3430" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
             echo "--> TCS3430 driver installed."
           else
