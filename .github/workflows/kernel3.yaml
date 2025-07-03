@@ -29,9 +29,9 @@ jobs:
       GCC_32_BASE: ${{ github.workspace }}/toolchains/arm
 
       # Main Compiler and Cross-Compile Variables
-      CC: ccache clang
-      CROSS_COMPILE: ${{ github.workspace }}/toolchains/aarch64/bin/aarch64-linux-android-
-      CROSS_COMPILE_ARM32: ${{ github.workspace }}/toolchains/arm/bin/arm-linux-androideabi-
+      CC: "ccache clang"
+      CROSS_COMPILE: "${{ github.workspace }}/toolchains/aarch64/bin/aarch64-linux-android-"
+      CROSS_COMPILE_ARM32: "${{ github.workspace }}/toolchains/arm/bin/arm-linux-androideabi-"
       
       # UNISOC Board-Specific Properties (used by Makefiles)
       BSP_BUILD_DT_OVERLAY: "y"
@@ -117,28 +117,29 @@ jobs:
           
           make -C "${{ github.workspace }}" O="${{ github.workspace }}/out" ARCH=${{ env.ARCH }} ${{ inputs.defconfig }} || exit 1
             
+          # CRITICAL FIX: Add quotes around variable assignments to handle spaces.
           make -C "${{ github.workspace }}" \
             O="${{ github.workspace }}/out" \
             -j$(nproc) \
-            ARCH=${{ env.ARCH }} \
-            CC=${{ env.CC }} \
-            LD=ld.lld \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            CROSS_COMPILE=${{ env.CROSS_COMPILE }} \
-            CROSS_COMPILE_ARM32=${{ env.CROSS_COMPILE_ARM32 }} \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            BSP_BUILD_ANDROID_OS=${{ env.BSP_BUILD_ANDROID_OS }} \
-            BSP_BUILD_FAMILY=${{ env.BSP_BUILD_FAMILY }} \
-            BSP_BUILD_DT_OVERLAY=${{ env.BSP_BUILD_DT_OVERLAY }} \
-            CONFIG_MALI_PLATFORM_NAME=${{ env.BSP_BOARD_NAME }} \
-            CONFIG_MALI_BOARD_PLATFORM=${{ env.BSP_BOARD_NAME }} \
-            BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE=${{ env.BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE }} \
-            BSP_BOARD_UNISOC_WCN_SOCKET=${{ env.BSP_BOARD_UNISOC_WCN_SOCKET }} \
-            BSP_BOARD_WLAN_DEVICE=${{ env.BSP_BOARD_WLAN_DEVICE }} \
+            ARCH="${{ env.ARCH }}" \
+            CC="${{ env.CC }}" \
+            LD="ld.lld" \
+            AR="llvm-ar" \
+            NM="llvm-nm" \
+            OBJCOPY="llvm-objcopy" \
+            OBJDUMP="llvm-objdump" \
+            STRIP="llvm-strip" \
+            CROSS_COMPILE="${{ env.CROSS_COMPILE }}" \
+            CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+            CLANG_TRIPLE="aarch64-linux-gnu-" \
+            BSP_BUILD_ANDROID_OS="${{ env.BSP_BUILD_ANDROID_OS }}" \
+            BSP_BUILD_FAMILY="${{ env.BSP_BUILD_FAMILY }}" \
+            BSP_BUILD_DT_OVERLAY="${{ env.BSP_BUILD_DT_OVERLAY }}" \
+            CONFIG_MALI_PLATFORM_NAME="${{ env.BSP_BOARD_NAME }}" \
+            CONFIG_MALI_BOARD_PLATFORM="${{ env.BSP_BOARD_NAME }}" \
+            BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE="${{ env.BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE }}" \
+            BSP_BOARD_UNISOC_WCN_SOCKET="${{ env.BSP_BOARD_UNISOC_WCN_SOCKET }}" \
+            BSP_BOARD_WLAN_DEVICE="${{ env.BSP_BOARD_WLAN_DEVICE }}" \
             Image modules || exit 1
 
           echo -e "\n[INFO]: KERNEL BUILD FINISHED..!"
@@ -156,7 +157,6 @@ jobs:
         run: |
           echo "[INFO]: Checking for and building known out-of-tree modules..."
           
-          # --- TCS3430 Sensor Driver ---
           TCS_DRIVER_PATH="${{ github.workspace }}/drivers/modules/kernel4.14/input/misc/tcs3430"
           if [ -f "$TCS_DRIVER_PATH/Makefile" ]; then
             echo "--> Found TCS3430 Makefile, building..."
