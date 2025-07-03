@@ -227,6 +227,73 @@ jobs:
             echo "--> Synaptics TS Makefile not found, skipping."
           fi
 
+          # --- VDSP Drivers ---
+          VDSP_DRIVER_PATH="${{ github.workspace }}/drivers/modules/kernel4.14/npu/vdsp"
+          if [ -f "$VDSP_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found VDSP Makefile, building..."
+            # This Makefile has a check, so we must pass the variable it's looking for.
+            make -C "$VDSP_DRIVER_PATH" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE="${{ env.BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE }}" \
+              modules
+            # The output directory is sprd_vdsp, which contains all the .ko files.
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/sprd_vdsp" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> VDSP drivers installed."
+          else
+            echo "--> VDSP Makefile not found, skipping."
+          fi
+
+          # --- SPRD Bluetooth TTY Driver ---
+          SPRD_BT_DRIVER_PATH="${{ github.workspace }}/drivers/modules/kernel4.14/wcn/bluetooth/driver"
+          if [ -f "$SPRD_BT_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found SPRD BT TTY Makefile, building..."
+            make -C "$SPRD_BT_DRIVER_PATH" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/sprdbt_tty" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> SPRD BT TTY driver installed."
+          else
+            echo "--> SPRD BT TTY Makefile not found, skipping."
+          fi
+
+          # --- SPRD FM Radio Driver ---
+          FM_DRIVER_PATH="${{ github.workspace }}/drivers/modules/kernel4.14/wcn/fm/driver"
+          if [ -f "$FM_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found SPRD FM Makefile, building..."
+            make -C "$FM_DRIVER_PATH" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/sprd_fm" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> SPRD FM driver installed."
+          else
+            echo "--> SPRD FM Makefile not found, skipping."
+          fi
+
+          # --- SPRD Wi-Fi Driver ---
+          SPRDWL_DRIVER_PATH="${{ github.workspace }}/drivers/modules/kernel4.14/wcn/wlan"
+          if [ -f "$SPRDWL_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found SPRDWL Makefile, building..."
+            make -C "$SPRDWL_DRIVER_PATH" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/sprdwl_ng" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> SPRDWL Wi-Fi driver installed."
+          else
+            echo "--> SPRDWL Makefile not found, skipping."
+          fi
+
       - name: Package Kernel and All Modules
         run: |
           echo "[INFO]: Packaging kernel artifacts..."
