@@ -44,6 +44,8 @@ jobs:
       BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE: "Cadence"
       BSP_BOARD_UNISOC_WCN_SOCKET: "sdio"
       BSP_BOARD_WLAN_DEVICE: "sc2355"
+      BSP_BOARD_CAMERA_MODULE_CPP_VERSION: "lite_r6p0"
+      BSP_BOARD_CAMERA_MODULE_FD_VERSION: "fd2.0"
       # This may need adjustment based on your device's configuration
       MALI_VOLTAGE_LEVEL: "1"
 
@@ -292,6 +294,54 @@ jobs:
             echo "--> SPRDWL Wi-Fi driver installed."
           else
             echo "--> SPRDWL Makefile not found, skipping."
+          fi
+
+          # --- SPRD Camera Driver ---
+          CAMERA_DRIVER_PATH="${{ github.workspace }}/drivers/modules/common/camera/core"
+          if [ -f "$CAMERA_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found SPRD Camera Makefile, building..."
+            make -C "$CAMERA_DRIVER_PATH" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/sprd_camera" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> SPRD Camera driver installed."
+          else
+            echo "--> SPRD Camera Makefile not found, skipping."
+          fi
+
+          # --- SPRD CPP Driver ---
+          CPP_DRIVER_PATH="${{ github.workspace }}/drivers/modules/common/camera/cpp"
+          if [ -f "$CPP_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found SPRD CPP Makefile, building..."
+            make -C "$CPP_DRIVER_PATH" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/sprd_cpp" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> SPRD CPP driver installed."
+          else
+            echo "--> SPRD CPP Makefile not found, skipping."
+          fi
+
+          # --- SPRD Face Detection Driver ---
+          FD_DRIVER_PATH="${{ github.workspace }}/drivers/modules/common/camera/fd"
+          if [ -f "$FD_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found SPRD FD Makefile, building..."
+            make -C "$FD_DRIVER_PATH" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/sprd_fd" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> SPRD FD driver installed."
+          else
+            echo "--> SPRD FD Makefile not found, skipping."
           fi
 
       - name: Package Kernel and All Modules
