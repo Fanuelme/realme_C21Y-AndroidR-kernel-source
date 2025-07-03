@@ -48,6 +48,7 @@ jobs:
       BSP_BOARD_CAMERA_MODULE_FD_VERSION: "fd2.0"
       BSP_KERNEL_VERSION: "kernel4.14"
       MALI_VOLTAGE_LEVEL: "1"
+      BSP_BOARD_CAMERA_MODULE_DVFS: "sharkl5pro"
 
     steps:
       - name: Checkout repository
@@ -144,6 +145,7 @@ jobs:
             BSP_BOARD_CAMERA_MODULE_CPP_VERSION="${{ env.BSP_BOARD_CAMERA_MODULE_CPP_VERSION }}" \
             BSP_BOARD_CAMERA_MODULE_FD_VERSION="${{ env.BSP_BOARD_CAMERA_MODULE_FD_VERSION }}" \
             BSP_KERNEL_VERSION="${{ env.BSP_KERNEL_VERSION }}" \
+            BSP_BOARD_CAMERA_MODULE_DVFS="${{ env.BSP_BOARD_CAMERA_MODULE_DVFS }}" \
             Image modules || exit 1
 
           echo -e "\n[INFO]: KERNEL BUILD FINISHED..!"
@@ -165,18 +167,17 @@ jobs:
           export BSP_MODULES_OUT="${{ github.workspace }}/out"
           
           # --- List of all out-of-tree modules ---
-          # Format: "KO_NAME:PATH_TO_MAKEFILE:EXTRA_MAKE_ARGS"
-          # Use "NONE" for no extra args.
+          # ORDER MATTERS HERE to resolve dependencies. Core components first.
           MODULE_LIST="
           sprd_flash_drv:drivers/modules/common/camera/flash/flash_drv:NONE
           flash_ic_ocp8132:drivers/modules/common/camera/flash/ocp8132:NONE
           flash_ic_ocp8137:drivers/modules/common/camera/flash/ocp8137:NONE
           flash_ic_sc2703:drivers/modules/common/camera/flash/sc2703s:NONE
+          sprd_sensor:drivers/modules/common/camera/sensor:NONE
           sprd_camera:drivers/modules/common/camera/core:NONE
           sprd_cpp:drivers/modules/common/camera/cpp:NONE
           sprd_fd:drivers/modules/common/camera/fd:NONE
           mmdvfs:drivers/modules/common/camera/mmdvfs:NONE
-          sprd_sensor:drivers/modules/common/camera/sensor:NONE
           mali_gondul:drivers/modules/kernel4.14/gpu/gondul:MALI_PLATFORM_NAME=${BSP_BOARD_NAME} TARGET_BOARD_PLATFORM=${BSP_BOARD_NAME} TARGET_BOARD=${BSP_BOARD_NAME} VOLTAGE_CONTROLLER_LEVEL=${MALI_VOLTAGE_LEVEL}
           stmvl53l0:drivers/modules/kernel4.14/input/misc/vl53L0:NONE
           tcs3430:drivers/modules/kernel4.14/input/misc/tcs3430:NONE
@@ -212,6 +213,7 @@ jobs:
                 BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE=\"${{ env.BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE }}\" \
                 BSP_BOARD_UNISOC_WCN_SOCKET=\"${{ env.BSP_BOARD_UNISOC_WCN_SOCKET }}\" \
                 BSP_BOARD_WLAN_DEVICE=\"${{ env.BSP_BOARD_WLAN_DEVICE }}\" \
+                BSP_BOARD_CAMERA_MODULE_DVFS=\"${{ env.BSP_BOARD_CAMERA_MODULE_DVFS }}\" \
                 modules"
               
               if [ "$EXTRA_ARGS" != "NONE" ]; then
