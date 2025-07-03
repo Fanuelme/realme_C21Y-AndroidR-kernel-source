@@ -17,7 +17,7 @@ jobs:
       # General Build Variables
       KERNEL_ROOT: ${{ github.workspace }}
       ARCH: arm64
-      KBUILD_BUILD_USER: '@ravindu644'
+      KBUILD_BUILD_USER: '@fanuverse'
       
       # Ccache Flags
       USE_CCACHE: 1
