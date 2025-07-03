@@ -33,7 +33,7 @@ jobs:
       BSP_BOARD_CAMERA_MODULE_CSI_VERSION: "csi_2.0"
       BSP_BOARD_CAMERA_MODULE_ISP_ADAPT_VERSION: "sharkl5pro"
       BSP_BOARD_NAME: "sharkl5pro"
-      BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE: "Cadence" # Fixed syntax here
+      BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE: "Cadence"
       BSP_BOARD_UNISOC_WCN_SOCKET: "sdio"
       BSP_BOARD_WLAN_DEVICE: "sc2355"
 
@@ -52,7 +52,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/toolchains
-          key: ${{ runner.os }}-toolchains-v3 # Incremented key for any toolchain/dependency changes
+          key: ${{ runner.os }}-toolchains-v3
 
       - name: Setup System Dependencies
         run: |
@@ -64,18 +64,23 @@ jobs:
         if: steps.cache-toolchains.outputs.cache-hit != 'true'
         run: |
           echo "[INFO] Setting up Toolchains..."
-          mkdir -p "${{ github.workspace }}/toolchains"
           cd "${{ github.workspace }}/toolchains"
           
-          echo "--> Downloading Clang..."
+          echo "--> Downloading and extracting Clang..."
+          mkdir -p clang-r383902b
           wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/0e9e7035bf8ad42437c6156e5950eab13655b26c/clang-r383902b.tar.gz -O clang.tar.gz
-          tar -xf clang.tar.gz -C clang-r383902b && rm clang.tar.gz
+          tar -xf clang.tar.gz -C clang-r383902b
+          rm clang.tar.gz
           
-          echo "--> Downloading GCC..."
+          echo "--> Downloading and extracting GCC..."
+          mkdir -p gcc
           wget -q https://developer.arm.com/-/media/Files/downloads/gnu-a/10.3-2021.07/binrel/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu.tar.xz -O gcc.tar.xz
-          mkdir -p gcc && tar -xf gcc.tar.xz --strip-components=1 -C gcc && rm gcc.tar.xz
-          
-          chmod +x ${{ env.GCC_BASE }}/bin/* && chmod +x ${{ env.CLANG_BASE }}/bin/*
+          tar -xf gcc.tar.xz --strip-components=1 -C gcc
+          rm gcc.tar.xz
+
+          echo "--> Setting permissions..."
+          chmod +x ${{ env.CLANG_BASE }}/bin/*
+          chmod +x ${{ env.GCC_BASE }}/bin/*
 
       - name: Set up PATH for toolchains
         run: |
@@ -86,11 +91,8 @@ jobs:
         run: |
           echo -e "\n[INFO]: KERNEL BUILD STARTED..!\n"
           
-          # Configure the kernel
           make -C "${{ github.workspace }}" O="${{ github.workspace }}/out" ARCH=${{ env.ARCH }} ${{ inputs.defconfig }} || exit 1
             
-          # Build the Image and all in-tree modules (Mali, VDSP, WLAN, etc.)
-          # Pass all necessary custom variables directly to the make command.
           make -C "${{ github.workspace }}" \
             O="${{ github.workspace }}/out" \
             -j$(nproc) \
@@ -135,24 +137,18 @@ jobs:
           else
             echo "--> TCS3430 Makefile not found, skipping."
           fi
-          
-          # Add other out-of-tree modules here using the same pattern if needed
 
       - name: Package Kernel and All Modules
         run: |
           echo "[INFO]: Packaging kernel artifacts..."
-          # Copy the kernel image
           cp "${{ github.workspace }}/out/arch/${{ env.ARCH }}/boot/Image" "${{ github.workspace }}/build/Image"
           
-          # Go to the modules installation directory
           cd "${{ github.workspace }}/modules_out"
           
-          # CRITICAL FIX: Remove recursive symlinks before zipping
           echo "[INFO]: Removing 'source' and 'build' symlinks to prevent zip recursion..."
           find . -type l -name "source" -delete
           find . -type l -name "build" -delete
           
-          # Create the zip archive of all modules
           echo "[INFO]: Zipping all modules..."
           zip -r9 "${{ github.workspace }}/build/modules-${{ github.run_id }}.zip" .
           
