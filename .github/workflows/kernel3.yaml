@@ -126,7 +126,7 @@ jobs:
           echo "[INFO]: Checking for and building known out-of-tree modules..."
           
           # --- TCS3430 Sensor Driver ---
-          TCS_DRIVER_PATH="${{ github.workspace }}/drivers/sensor/als/tcs3430"
+          TCS_DRIVER_PATH="${{ github.workspace }}/drivers/modules/kernel4.14/input/misc/tcs3430"
           if [ -f "$TCS_DRIVER_PATH/Makefile" ]; then
             echo "--> Found TCS3430 Makefile, building..."
             export BSP_KERNEL_PATH="${{ github.workspace }}/out"
