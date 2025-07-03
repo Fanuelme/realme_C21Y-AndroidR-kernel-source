@@ -1,0 +1,297 @@
+name: Kernel Build
+
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      defconfig:
+        description: 'Kernel defconfig name (e.g., rmx3263_defconfig)'
+        required: true
+        default: 'rmx3263_defconfig'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      # General Build Variables
+      KERNEL_ROOT: ${{ github.workspace }}
+      ARCH: arm64
+      KBUILD_BUILD_USER: '@ravindu644'
+      
+      # Ccache Flags
+      USE_CCACHE: 1
+      CCACHE_EXEC: /usr/bin/ccache
+
+      # Toolchain Paths
+      CLANG_BASE: ${{ github.workspace }}/toolchains/clang-r383902b
+      GCC_64_BASE: ${{ github.workspace }}/toolchains/aarch64
+      GCC_32_BASE: ${{ github.workspace }}/toolchains/arm
+
+      # Main Compiler and Cross-Compile Variables
+      CC: "ccache clang"
+      CROSS_COMPILE: "${{ github.workspace }}/toolchains/aarch64/bin/aarch64-linux-android-"
+      CROSS_COMPILE_ARM32: "${{ github.workspace }}/toolchains/arm/bin/arm-linux-androideabi-"
+      
+      # UNISOC Board-Specific Properties (used by Makefiles)
+      BSP_BUILD_DT_OVERLAY: "y"
+      BSP_BUILD_ANDROID_OS: "y"
+      BSP_BUILD_FAMILY: "sharkl5Pro"
+      BSP_BOARD_CAMERA_MODULE_ISP_VERSION: "isp2.6"
+      BSP_BOARD_CAMERA_MODULE_CSI_VERSION: "receiver_r3p0"
+      BSP_BOARD_CAMERA_MODULE_ISP_ADAPT_VERSION: "sharkl5pro"
+      BSP_BOARD_NAME: "sharkl5Pro"
+      BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE: "Cadence"
+      BSP_BOARD_UNISOC_WCN_SOCKET: "sdio"
+      BSP_BOARD_WLAN_DEVICE: "sc2355"
+      BSP_BOARD_CAMERA_MODULE_CPP_VERSION: "lite_r6p0"
+      BSP_BOARD_CAMERA_MODULE_FD_VERSION: "fd2.0"
+      BSP_KERNEL_VERSION: "kernel4.14"
+      MALI_VOLTAGE_LEVEL: "1"
+      BSP_BOARD_CAMERA_MODULE_DVFS: "sharkl5pro"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Create build directories
+        run: |
+          mkdir -p "${{ github.workspace }}/out" "${{ github.workspace }}/build" "${{ github.workspace }}/toolchains" "${{ github.workspace }}/modules_out"
+
+      - name: Cache Toolchains
+        id: cache-toolchains
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/toolchains
+          key: ${{ runner.os }}-toolchains-lineage-v1
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-
+
+      - name: Setup System Dependencies
+        run: |
+          echo "[INFO]: Installing system requirements..."
+          sudo apt-get update
+          sudo apt-get install -y --fix-missing \
+            git device-tree-compiler lz4 xz-utils zlib1g-dev zip make gcc g++ \
+            python3 python-is-python3 libncurses-dev flex bison gperf libssl-dev \
+            libelf-dev kmod pahole zstd libyaml-dev ccache
+
+      - name: Download and Set up Toolchains
+        if: steps.cache-toolchains.outputs.cache-hit != 'true'
+        run: |
+          echo "[INFO] Setting up Toolchains..."
+          cd "${{ github.workspace }}/toolchains"
+          
+          echo "--> Cloning Clang..."
+          mkdir -p clang-r383902b
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/0e9e7035bf8ad42437c6156e5950eab13655b26c/clang-r383902b.tar.gz -O clang.tar.gz
+          tar -xf clang.tar.gz -C clang-r383902b && rm clang.tar.gz
+          
+          echo "--> Cloning aarch64 GCC..."
+          git clone --depth=1 https://github.com/rifsxd/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 -b lineage-19.1 aarch64
+
+          echo "--> Cloning arm GCC..."
+          git clone --depth=1 https://github.com/rifsxd/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 -b lineage-19.1 arm
+
+          echo "--> Setting permissions..."
+          chmod +x ${{ env.CLANG_BASE }}/bin/*
+          chmod +x ${{ env.GCC_64_BASE }}/bin/*
+          chmod +x ${{ env.GCC_32_BASE }}/bin/*
+
+      - name: Set up PATH and ccache
+        run: |
+          echo "${{ env.CLANG_BASE }}/bin" >> $GITHUB_PATH
+          echo "${{ env.GCC_64_BASE }}/bin" >> $GITHUB_PATH
+          echo "${{ env.GCC_32_BASE }}/bin" >> $GITHUB_PATH
+          
+          echo "[INFO] Configuring ccache..."
+          ccache -M 5G
+          ccache -z
+
+      - name: Build Kernel and In-Tree Modules
+        run: |
+          echo -e "\n[INFO]: KERNEL BUILD STARTED..!\n"
+          
+          make -C "${{ github.workspace }}" O="${{ github.workspace }}/out" ARCH=${{ env.ARCH }} ${{ inputs.defconfig }} || exit 1
+            
+          make -C "${{ github.workspace }}" \
+            O="${{ github.workspace }}/out" \
+            -j$(nproc) \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            ARCH="${{ env.ARCH }}" \
+            CC="${{ env.CC }}" \
+            LD="ld.lld" \
+            AR="llvm-ar" \
+            NM="llvm-nm" \
+            OBJCOPY="llvm-objcopy" \
+            OBJDUMP="llvm-objdump" \
+            STRIP="llvm-strip" \
+            CROSS_COMPILE="${{ env.CROSS_COMPILE }}" \
+            CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+            CLANG_TRIPLE="aarch64-linux-gnu-" \
+            Image modules || exit 1
+
+          echo -e "\n[INFO]: KERNEL BUILD FINISHED..!"
+          ccache -s
+
+      - name: Install In-Tree Kernel Modules
+        run: |
+          echo "[INFO]: Installing in-tree kernel modules..."
+          make -C "${{ github.workspace }}/out" \
+            LLVM=1 \
+            ARCH="${{ env.ARCH }}" \
+            CC="${{ env.CC }}" \
+            LD="ld.lld" \
+            CROSS_COMPILE="${{ env.CROSS_COMPILE }}" \
+            INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" \
+            modules_install || exit 1
+          
+      - name: Build Out-of-Tree Modules
+        run: |
+          echo "[INFO]: Building all out-of-tree modules..."
+          
+          export BSP_KERNEL_PATH="${{ github.workspace }}/out"
+          export BSP_MODULES_OUT="${{ github.workspace }}/out"
+          
+          MODULE_LIST="
+          sprd_flash_drv:drivers/modules/common/camera/flash/flash_drv:NONE
+          sprd_sensor:drivers/modules/common/camera/sensor:NONE
+          sprd_camera:drivers/modules/common/camera/core:NONE
+          flash_ic_ocp8132:drivers/modules/common/camera/flash/ocp8132:NONE
+          flash_ic_ocp8137:drivers/modules/common/camera/flash/ocp8137:NONE
+          flash_ic_sc2703:drivers/modules/common/camera/flash/sc2703s:NONE
+          sprd_cpp:drivers/modules/common/camera/cpp:NONE
+          sprd_fd:drivers/modules/common/camera/fd:NONE
+          mmdvfs:drivers/modules/common/camera/mmdvfs:NONE
+          mali_gondul:drivers/modules/kernel4.14/gpu/gondul:MALI_PLATFORM_NAME=${BSP_BOARD_NAME} TARGET_BOARD_PLATFORM=${BSP_BOARD_NAME} TARGET_BOARD=${BSP_BOARD_NAME} VOLTAGE_CONTROLLER_LEVEL=${MALI_VOLTAGE_LEVEL}
+          stmvl53l0:drivers/modules/kernel4.14/input/misc/vl53L0:NONE
+          tcs3430:drivers/modules/kernel4.14/input/misc/tcs3430:NONE
+          microarray_fp:drivers/modules/kernel4.14/input/fingerprint/microarray:NONE
+          synaptics_dsx_td4310:drivers/modules/kernel4.14/input/touchscreen/synaptics_dsx_td4310:NONE
+          ssd20xx_ts:drivers/modules/kernel4.14/input/touchscreen/ssl_ssd20xx:NONE
+          sprd_vdsp:drivers/modules/kernel4.14/npu/vdsp:NONE
+          sprdbt_tty:drivers/modules/kernel4.14/wcn/bluetooth/driver:NONE
+          sprd_fm:drivers/modules/kernel4.14/wcn/fm/driver:NONE
+          sprdwl_ng:drivers/modules/kernel4.14/wcn/wlan:NONE
+          "
+          export KBUILD_EXTRA_SYMBOLS=""
+
+          for module_info in $MODULE_LIST; do
+            KO_NAME=$(echo "$module_info" | cut -d':' -f1)
+            DRIVER_PATH="${{ github.workspace }}/$(echo "$module_info" | cut -d':' -f2)"
+            EXTRA_ARGS=$(echo "$module_info" | cut -d':' -f3)
+
+            if [ -f "$DRIVER_PATH/Makefile" ]; then
+              echo "--> Building $KO_NAME..."
+              
+              MAKE_CMD="make -C \"$DRIVER_PATH\" \
+                LLVM=1 LLVM_IAS=1 ARCH=\"${{ env.ARCH }}\" CC=\"${{ env.CC }}\" LD=\"ld.lld\" AR=\"llvm-ar\" NM=\"llvm-nm\" \
+                OBJCOPY=\"llvm-objcopy\" OBJDUMP=\"llvm-objdump\" STRIP=\"llvm-strip\" \
+                CROSS_COMPILE=\"${{ env.CROSS_COMPILE }}\" CROSS_COMPILE_ARM32=\"${{ env.CROSS_COMPILE_ARM32 }}\" \
+                CLANG_TRIPLE=\"aarch64-linux-gnu-\" \
+                BSP_BUILD_ANDROID_OS=\"${{ env.BSP_BUILD_ANDROID_OS }}\" BSP_BUILD_FAMILY=\"${{ env.BSP_BUILD_FAMILY }}\" \
+                BSP_BUILD_DT_OVERLAY=\"${{ env.BSP_BUILD_DT_OVERLAY }}\" BSP_BOARD_CAMERA_MODULE_CPP_VERSION=\"${{ env.BSP_BOARD_CAMERA_MODULE_CPP_VERSION }}\" \
+                BSP_BOARD_CAMERA_MODULE_FD_VERSION=\"${{ env.BSP_BOARD_CAMERA_MODULE_FD_VERSION }}\" BSP_KERNEL_VERSION=\"${{ env.BSP_KERNEL_VERSION }}\" \
+                BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE=\"${{ env.BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE }}\" BSP_BOARD_UNISOC_WCN_SOCKET=\"${{ env.BSP_BOARD_UNISOC_WCN_SOCKET }}\" \
+                BSP_BOARD_WLAN_DEVICE=\"${{ env.BSP_BOARD_WLAN_DEVICE }}\" BSP_BOARD_CAMERA_MODULE_DVFS=\"${{ env.BSP_BOARD_CAMERA_MODULE_DVFS }}\" \
+                modules"
+              
+              if [ -n "$KBUILD_EXTRA_SYMBOLS" ]; then
+                MAKE_CMD="$MAKE_CMD KBUILD_EXTRA_SYMBOLS=\"$KBUILD_EXTRA_SYMBOLS\""
+              fi
+
+              if [ "$EXTRA_ARGS" != "NONE" ]; then
+                MAKE_CMD="$MAKE_CMD $EXTRA_ARGS"
+              fi
+              
+              eval $MAKE_CMD
+              
+              if [ -f "$BSP_MODULES_OUT/$KO_NAME/Module.symvers" ]; then
+                KBUILD_EXTRA_SYMBOLS="$KBUILD_EXTRA_SYMBOLS $BSP_MODULES_OUT/$KO_NAME/Module.symvers"
+              fi
+            else
+              echo "--> Makefile not found for $KO_NAME at $DRIVER_PATH, skipping."
+            fi
+          done
+
+      - name: Install Out-of-Tree Modules and Generate Dependencies
+        run: |
+          echo "[INFO]: Installing all out-of-tree modules..."
+          
+          export BSP_KERNEL_PATH="${{ github.workspace }}/out"
+          export BSP_MODULES_OUT="${{ github.workspace }}/out"
+          
+          MODULE_LIST="
+          sprd_flash_drv:drivers/modules/common/camera/flash/flash_drv
+          sprd_sensor:drivers/modules/common/camera/sensor
+          sprd_camera:drivers/modules/common/camera/core
+          flash_ic_ocp8132:drivers/modules/common/camera/flash/ocp8132
+          flash_ic_ocp8137:drivers/modules/common/camera/flash/ocp8137
+          flash_ic_sc2703:drivers/modules/common/camera/flash/sc2703s
+          sprd_cpp:drivers/modules/common/camera/cpp
+          sprd_fd:drivers/modules/common/camera/fd
+          mmdvfs:drivers/modules/common/camera/mmdvfs
+          mali_gondul:drivers/modules/kernel4.14/gpu/gondul
+          stmvl53l0:drivers/modules/kernel4.14/input/misc/vl53L0
+          tcs3430:drivers/modules/kernel4.14/input/misc/tcs3430
+          microarray_fp:drivers/modules/kernel4.14/input/fingerprint/microarray
+          synaptics_dsx_td4310:drivers/modules/kernel4.14/input/touchscreen/synaptics_dsx_td4310
+          ssd20xx_ts:drivers/modules/kernel4.14/input/touchscreen/ssl_ssd20xx
+          sprd_vdsp:drivers/modules/kernel4.14/npu/vdsp
+          sprdbt_tty:drivers/modules/kernel4.14/wcn/bluetooth/driver
+          sprd_fm:drivers/modules/kernel4.14/wcn/fm/driver
+          sprdwl_ng:drivers/modules/kernel4.14/wcn/wlan
+          "
+          for module_info in $MODULE_LIST; do
+            KO_NAME=$(echo "$module_info" | cut -d':' -f1)
+            DRIVER_PATH="${{ github.workspace }}/$(echo "$module_info" | cut -d':' -f2)"
+            if [ -d "$BSP_MODULES_OUT/$KO_NAME" ]; then
+              make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/$KO_NAME" \
+                LLVM=1 \
+                ARCH="${{ env.ARCH }}" \
+                CC="${{ env.CC }}" \
+                LD="ld.lld" \
+                CROSS_COMPILE="${{ env.CROSS_COMPILE }}" \
+                INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" \
+                modules_install
+              echo "--> $KO_NAME driver installed."
+            fi
+          done
+
+          echo "[INFO]: Generating final module dependency files..."
+          KERNEL_VERSION=$(cat ${{ github.workspace }}/out/include/generated/utsrelease.h | awk '{print $3}' | tr -d '"')
+          touch "${{ github.workspace }}/modules_out/lib/modules/$KERNEL_VERSION/modules.builtin.modinfo"
+          depmod -a -b "${{ github.workspace }}/modules_out" "$KERNEL_VERSION"
+
+      - name: Package Kernel and All Modules
+        run: |
+          echo "[INFO]: Packaging kernel artifacts..."
+          cp "${{ github.workspace }}/out/arch/${{ env.ARCH }}/boot/Image" "${{ github.workspace }}/build/Image"
+          
+          cd "${{ github.workspace }}/modules_out"
+          
+          echo "[INFO]: Removing 'source' and 'build' symlinks to prevent zip recursion..."
+          find . -type l -name "source" -delete
+          find . -type l -name "build" -delete
+          
+          echo "[INFO]: Zipping all modules..."
+          zip -r9 "${{ github.workspace }}/build/modules-${{ github.run_id }}.zip" .
+          
+          echo "Kernel Image and Modules ZIP are ready in the 'build' directory."
+          ls -lR ${{ github.workspace }}/build
+
+      - name: Upload Kernel Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-build-${{ github.run_id }}
+          path: ${{ github.workspace }}/build/*
+          retention-days: 7
