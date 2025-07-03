@@ -144,6 +144,9 @@ jobs:
             BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE="${{ env.BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE }}" \
             BSP_BOARD_UNISOC_WCN_SOCKET="${{ env.BSP_BOARD_UNISOC_WCN_SOCKET }}" \
             BSP_BOARD_WLAN_DEVICE="${{ env.BSP_BOARD_WLAN_DEVICE }}" \
+            BSP_BOARD_CAMERA_MODULE_CPP_VERSION= "${{ env.BSP_BOARD_CAMERA_MODULE_CPP_VERSION }}" \
+            BSP_BOARD_CAMERA_MODULE_FD_VERSION= "${{ env.BSP_BOARD_CAMERA_MODULE_FD_VERSION }}" \
+            BSP_KERNEL_VERSION= "${{ env.BSP_KERNEL_VERSION }}" \
             Image modules || exit 1
 
           echo -e "\n[INFO]: KERNEL BUILD FINISHED..!"
@@ -180,6 +183,22 @@ jobs:
             echo "--> Mali driver installed."
           else
             echo "--> Mali Makefile not found, skipping."
+          fi
+
+          # --- ST VL53L0 ToF Sensor Driver ---
+          VL53L0_DRIVER_PATH="${{ github.workspace }}/drivers/modules/kernel4.14/input/misc/vl53L0"
+          if [ -f "$VL53L0_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found ST VL53L0 Makefile, building..."
+            make -C "$VL53L0_DRIVER_PATH" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/stmvl53l0" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> ST VL53L0 driver installed."
+          else
+            echo "--> ST VL53L0 Makefile not found, skipping."
           fi
 
           # --- TCS3430 Sensor Driver ---
@@ -228,6 +247,22 @@ jobs:
             echo "--> Synaptics TS driver installed."
           else
             echo "--> Synaptics TS Makefile not found, skipping."
+          fi
+
+          # --- SSD20XX Touchscreen Driver ---
+          SSD_TS_DRIVER_PATH="${{ github.workspace }}/drivers/modules/kernel4.14/input/touchscreen/ssl_ssd20xx"
+          if [ -f "$SSD_TS_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found SSD20XX TS Makefile, building..."
+            make -C "$SSD_TS_DRIVER_PATH" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/ssd20xx_ts" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> SSD20XX TS driver installed."
+          else
+            echo "--> SSD20XX TS Makefile not found, skipping."
           fi
 
           # --- VDSP Drivers ---
@@ -425,6 +460,22 @@ jobs:
             echo "--> MM DVFS driver installed."
           else
             echo "--> MM DVFS Makefile not found, skipping."
+          fi
+
+          # --- SPRD Sensor Hub Driver ---
+          SENSOR_DRIVER_PATH="${{ github.workspace }}/drivers/modules/common/camera/sensor"
+          if [ -f "$SENSOR_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found SPRD Sensor Hub Makefile, building..."
+            make -C "$SENSOR_DRIVER_PATH" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/sprd_sensor" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> SPRD Sensor Hub driver installed."
+          else
+            echo "--> SPRD Sensor Hub Makefile not found, skipping."
           fi
 
       - name: Package Kernel and All Modules
