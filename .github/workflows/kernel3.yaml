@@ -117,7 +117,6 @@ jobs:
           
           make -C "${{ github.workspace }}" O="${{ github.workspace }}/out" ARCH=${{ env.ARCH }} ${{ inputs.defconfig }} || exit 1
             
-          # CRITICAL FIX: Add quotes around variable assignments to handle spaces.
           make -C "${{ github.workspace }}" \
             O="${{ github.workspace }}/out" \
             -j$(nproc) \
@@ -162,7 +161,24 @@ jobs:
             echo "--> Found TCS3430 Makefile, building..."
             export BSP_KERNEL_PATH="${{ github.workspace }}/out"
             export BSP_MODULES_OUT="${{ github.workspace }}/out"
-            make -C "$TCS_DRIVER_PATH" modules
+            
+            # CRITICAL FIX: Pass all compiler variables to the out-of-tree make command
+            # to ensure it uses Clang and the correct toolchain.
+            make -C "$TCS_DRIVER_PATH" \
+              ARCH="${{ env.ARCH }}" \
+              CC="${{ env.CC }}" \
+              LD="ld.lld" \
+              AR="llvm-ar" \
+              NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" \
+              OBJDUMP="llvm-objdump" \
+              STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" \
+              CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              modules
+
+            # The install step just copies files, so it doesn't need all the flags.
             make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/tcs3430" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
             echo "--> TCS3430 driver installed."
           else
