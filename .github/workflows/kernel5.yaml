@@ -17,7 +17,7 @@ jobs:
       # General Build Variables
       KERNEL_ROOT: ${{ github.workspace }}
       ARCH: arm64
-      KBUILD_BUILD_USER: '@fanuverse'
+      KBUILD_BUILD_USER: '@ravindu644'
       
       # Ccache Flags
       USE_CCACHE: 1
@@ -122,6 +122,7 @@ jobs:
           
           make -C "${{ github.workspace }}" O="${{ github.workspace }}/out" ARCH=${{ env.ARCH }} ${{ inputs.defconfig }} || exit 1
             
+          # FIX: Removed spaces after '=' for BSP variables
           make -C "${{ github.workspace }}" \
             O="${{ github.workspace }}/out" \
             -j$(nproc) \
@@ -138,6 +139,13 @@ jobs:
             CROSS_COMPILE="${{ env.CROSS_COMPILE }}" \
             CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
             CLANG_TRIPLE="aarch64-linux-gnu-" \
+            BSP_BUILD_ANDROID_OS="${{ env.BSP_BUILD_ANDROID_OS }}" \
+            BSP_BUILD_FAMILY="${{ env.BSP_BUILD_FAMILY }}" \
+            BSP_BUILD_DT_OVERLAY="${{ env.BSP_BUILD_DT_OVERLAY }}" \
+            BSP_BOARD_CAMERA_MODULE_CPP_VERSION="${{ env.BSP_BOARD_CAMERA_MODULE_CPP_VERSION }}" \
+            BSP_BOARD_CAMERA_MODULE_FD_VERSION="${{ env.BSP_BOARD_CAMERA_MODULE_FD_VERSION }}" \
+            BSP_KERNEL_VERSION="${{ env.BSP_KERNEL_VERSION }}" \
+            BSP_BOARD_CAMERA_MODULE_DVFS="${{ env.BSP_BOARD_CAMERA_MODULE_DVFS }}" \
             Image modules || exit 1
 
           echo -e "\n[INFO]: KERNEL BUILD FINISHED..!"
@@ -160,13 +168,13 @@ jobs:
           
           MODULE_LIST="
           sprd_flash_drv:drivers/modules/common/camera/flash/flash_drv:NONE
+          sprd_sensor:drivers/modules/common/camera/sensor:NONE
+          sprd_camera:drivers/modules/common/camera/core:NONE
           flash_ic_ocp8132:drivers/modules/common/camera/flash/ocp8132:NONE
           flash_ic_ocp8137:drivers/modules/common/camera/flash/ocp8137:NONE
           flash_ic_sc2703:drivers/modules/common/camera/flash/sc2703s:NONE
           sprd_cpp:drivers/modules/common/camera/cpp:NONE
           sprd_fd:drivers/modules/common/camera/fd:NONE
-          sprd_camera:drivers/modules/common/camera/core:NONE
-          sprd_sensor:drivers/modules/common/camera/sensor:NONE
           mmdvfs:drivers/modules/common/camera/mmdvfs:NONE
           mali_gondul:drivers/modules/kernel4.14/gpu/gondul:MALI_PLATFORM_NAME=${BSP_BOARD_NAME} TARGET_BOARD_PLATFORM=${BSP_BOARD_NAME} TARGET_BOARD=${BSP_BOARD_NAME} VOLTAGE_CONTROLLER_LEVEL=${MALI_VOLTAGE_LEVEL}
           stmvl53l0:drivers/modules/kernel4.14/input/misc/vl53L0:NONE
@@ -179,6 +187,8 @@ jobs:
           sprd_fm:drivers/modules/kernel4.14/wcn/fm/driver:NONE
           sprdwl_ng:drivers/modules/kernel4.14/wcn/wlan:NONE
           "
+          export KBUILD_EXTRA_SYMBOLS=""
+
           for module_info in $MODULE_LIST; do
             KO_NAME=$(echo "$module_info" | cut -d':' -f1)
             DRIVER_PATH="${{ github.workspace }}/$(echo "$module_info" | cut -d':' -f2)"
@@ -199,11 +209,19 @@ jobs:
                 BSP_BOARD_WLAN_DEVICE=\"${{ env.BSP_BOARD_WLAN_DEVICE }}\" BSP_BOARD_CAMERA_MODULE_DVFS=\"${{ env.BSP_BOARD_CAMERA_MODULE_DVFS }}\" \
                 modules"
               
+              if [ -n "$KBUILD_EXTRA_SYMBOLS" ]; then
+                MAKE_CMD="$MAKE_CMD KBUILD_EXTRA_SYMBOLS=\"$KBUILD_EXTRA_SYMBOLS\""
+              fi
+
               if [ "$EXTRA_ARGS" != "NONE" ]; then
                 MAKE_CMD="$MAKE_CMD $EXTRA_ARGS"
               fi
               
               eval $MAKE_CMD
+              
+              if [ -f "$BSP_MODULES_OUT/$KO_NAME/Module.symvers" ]; then
+                KBUILD_EXTRA_SYMBOLS="$KBUILD_EXTRA_SYMBOLS $BSP_MODULES_OUT/$KO_NAME/Module.symvers"
+              fi
             else
               echo "--> Makefile not found for $KO_NAME at $DRIVER_PATH, skipping."
             fi
@@ -217,14 +235,14 @@ jobs:
           export BSP_MODULES_OUT="${{ github.workspace }}/out"
           
           MODULE_LIST="
+          sprd_flash_drv:drivers/modules/common/camera/flash/flash_drv
+          sprd_sensor:drivers/modules/common/camera/sensor
+          sprd_camera:drivers/modules/common/camera/core
           flash_ic_ocp8132:drivers/modules/common/camera/flash/ocp8132
           flash_ic_ocp8137:drivers/modules/common/camera/flash/ocp8137
           flash_ic_sc2703:drivers/modules/common/camera/flash/sc2703s
-          sprd_flash_drv:drivers/modules/common/camera/flash/flash_drv
           sprd_cpp:drivers/modules/common/camera/cpp
           sprd_fd:drivers/modules/common/camera/fd
-          sprd_camera:drivers/modules/common/camera/core
-          sprd_sensor:drivers/modules/common/camera/sensor
           mmdvfs:drivers/modules/common/camera/mmdvfs
           mali_gondul:drivers/modules/kernel4.14/gpu/gondul
           stmvl53l0:drivers/modules/kernel4.14/input/misc/vl53L0
@@ -240,7 +258,7 @@ jobs:
           for module_info in $MODULE_LIST; do
             KO_NAME=$(echo "$module_info" | cut -d':' -f1)
             DRIVER_PATH="${{ github.workspace }}/$(echo "$module_info" | cut -d':' -f2)"
-            if [ -f "$DRIVER_PATH/Makefile" ]; then
+            if [ -d "$BSP_MODULES_OUT/$KO_NAME" ]; then
               make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/$KO_NAME" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
               echo "--> $KO_NAME driver installed."
             fi
