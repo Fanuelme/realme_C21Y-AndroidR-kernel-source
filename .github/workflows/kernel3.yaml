@@ -39,12 +39,12 @@ jobs:
       BSP_BUILD_FAMILY: "sharkl5Pro"
       BSP_BOARD_CAMERA_MODULE_ISP_VERSION: "isp2.6"
       BSP_BOARD_CAMERA_MODULE_CSI_VERSION: "csi_2.0"
-      BSP_BOARD_CAMERA_MODULE_ISP_ADAPT_VERSION: "sharkl5Pro"
-      BSP_BOARD_NAME: "sharkl5Pro"
+      BSP_BOARD_CAMERA_MODULE_ISP_ADAPT_VERSION: "sharkl5pro"
+      BSP_BOARD_NAME: "sharkl5pro"
       BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE: "Cadence"
       BSP_BOARD_UNISOC_WCN_SOCKET: "sdio"
       BSP_BOARD_WLAN_DEVICE: "sc2355"
-      # You may need to adjust this value based on your device's configuration
+      # This may need adjustment based on your device's configuration
       MALI_VOLTAGE_LEVEL: "1"
 
     steps:
@@ -158,7 +158,6 @@ jobs:
         run: |
           echo "[INFO]: Checking for and building known out-of-tree modules..."
           
-          # Common variables for out-of-tree modules
           export BSP_KERNEL_PATH="${{ github.workspace }}/out"
           export BSP_MODULES_OUT="${{ github.workspace }}/out"
           
@@ -167,15 +166,12 @@ jobs:
           if [ -f "$MALI_DRIVER_PATH/Makefile" ]; then
             echo "--> Found Mali Makefile, building..."
             make -C "$MALI_DRIVER_PATH" \
-              LLVM=1 LLVM_IAS=1 \
-              ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
               OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
               CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
               CLANG_TRIPLE="aarch64-linux-gnu-" \
-              MALI_PLATFORM_NAME="${{ env.BSP_BOARD_NAME }}" \
-              TARGET_BOARD_PLATFORM="${{ env.BSP_BOARD_NAME }}" \
-              TARGET_BOARD="${{ env.BSP_BOARD_NAME }}" \
-              VOLTAGE_CONTROLLER_LEVEL="${{ env.MALI_VOLTAGE_LEVEL }}" \
+              MALI_PLATFORM_NAME="${{ env.BSP_BOARD_NAME }}" TARGET_BOARD_PLATFORM="${{ env.BSP_BOARD_NAME }}" \
+              TARGET_BOARD="${{ env.BSP_BOARD_NAME }}" VOLTAGE_CONTROLLER_LEVEL="${{ env.MALI_VOLTAGE_LEVEL }}" \
               modules
             make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/mali_gondul" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
             echo "--> Mali driver installed."
@@ -188,8 +184,7 @@ jobs:
           if [ -f "$TCS_DRIVER_PATH/Makefile" ]; then
             echo "--> Found TCS3430 Makefile, building..."
             make -C "$TCS_DRIVER_PATH" \
-              LLVM=1 LLVM_IAS=1 \
-              ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
               OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
               CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
               CLANG_TRIPLE="aarch64-linux-gnu-" \
@@ -198,6 +193,38 @@ jobs:
             echo "--> TCS3430 driver installed."
           else
             echo "--> TCS3430 Makefile not found, skipping."
+          fi
+          
+          # --- Microarray Fingerprint Driver ---
+          MICROARRAY_DRIVER_PATH="${{ github.workspace }}/drivers/modules/kernel4.14/input/fingerprint/microarray"
+          if [ -f "$MICROARRAY_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found Microarray FP Makefile, building..."
+            make -C "$MICROARRAY_DRIVER_PATH" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/microarray_fp" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> Microarray FP driver installed."
+          else
+            echo "--> Microarray FP Makefile not found, skipping."
+          fi
+
+          # --- Synaptics Touchscreen Driver ---
+          SYNAPTICS_DRIVER_PATH="${{ github.workspace }}/drivers/modules/kernel4.14/input/touchscreen/synaptics_dsx_td4310"
+          if [ -f "$SYNAPTICS_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found Synaptics TS Makefile, building..."
+            make -C "$SYNAPTICS_DRIVER_PATH" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/synaptics_dsx_td4310" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> Synaptics TS driver installed."
+          else
+            echo "--> Synaptics TS Makefile not found, skipping."
           fi
 
       - name: Package Kernel and All Modules
