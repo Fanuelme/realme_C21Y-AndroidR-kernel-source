@@ -1,0 +1,167 @@
+name: Kernel Build
+
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      defconfig:
+        description: 'Kernel defconfig name (e.g., rmx3263_defconfig)'
+        required: true
+        default: 'rmx3263_defconfig'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      # General Build Variables
+      KERNEL_ROOT: ${{ github.workspace }}
+      ARCH: arm64
+      KBUILD_BUILD_USER: '@ravindu644'
+
+      # Toolchain Paths
+      CLANG_BASE: ${{ github.workspace }}/toolchains/clang-r383902b
+      GCC_BASE: ${{ github.workspace }}/toolchains/gcc
+      CROSS_COMPILE: ${{ github.workspace }}/toolchains/gcc/bin/aarch64-none-linux-gnu-
+      CC: ${{ github.workspace }}/toolchains/clang-r383902b/bin/clang
+      
+      # UNISOC Board-Specific Properties (used by Makefiles)
+      BSP_BUILD_DT_OVERLAY: "y"
+      BSP_BUILD_ANDROID_OS: "y"
+      BSP_BUILD_FAMILY: "sharkl5Pro"
+      BSP_BOARD_CAMERA_MODULE_ISP_VERSION: "isp2.6"
+      BSP_BOARD_CAMERA_MODULE_CSI_VERSION: "csi_2.0"
+      BSP_BOARD_CAMERA_MODULE_ISP_ADAPT_VERSION: "sharkl5pro"
+      BSP_BOARD_NAME: "sharkl5pro"
+      BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE: "Cadence" # Fixed syntax here
+      BSP_BOARD_UNISOC_WCN_SOCKET: "sdio"
+      BSP_BOARD_WLAN_DEVICE: "sc2355"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Create build directories
+        run: |
+          mkdir -p "${{ github.workspace }}/out" "${{ github.workspace }}/build" "${{ github.workspace }}/toolchains" "${{ github.workspace }}/modules_out"
+
+      - name: Cache Toolchains
+        id: cache-toolchains
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/toolchains
+          key: ${{ runner.os }}-toolchains-v3 # Incremented key for any toolchain/dependency changes
+
+      - name: Setup System Dependencies
+        run: |
+          echo "[INFO]: Installing system requirements..."
+          sudo apt-get update
+          sudo apt-get install -y git device-tree-compiler lz4 xz-utils zlib1g-dev zip make gcc g++ python3 python-is-python3 libncurses-dev flex bison gperf libssl-dev libelf-dev kmod pahole zstd libyaml-dev --fix-missing
+
+      - name: Download and Set up Toolchains
+        if: steps.cache-toolchains.outputs.cache-hit != 'true'
+        run: |
+          echo "[INFO] Setting up Toolchains..."
+          mkdir -p "${{ github.workspace }}/toolchains"
+          cd "${{ github.workspace }}/toolchains"
+          
+          echo "--> Downloading Clang..."
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/0e9e7035bf8ad42437c6156e5950eab13655b26c/clang-r383902b.tar.gz -O clang.tar.gz
+          tar -xf clang.tar.gz -C clang-r383902b && rm clang.tar.gz
+          
+          echo "--> Downloading GCC..."
+          wget -q https://developer.arm.com/-/media/Files/downloads/gnu-a/10.3-2021.07/binrel/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu.tar.xz -O gcc.tar.xz
+          mkdir -p gcc && tar -xf gcc.tar.xz --strip-components=1 -C gcc && rm gcc.tar.xz
+          
+          chmod +x ${{ env.GCC_BASE }}/bin/* && chmod +x ${{ env.CLANG_BASE }}/bin/*
+
+      - name: Set up PATH for toolchains
+        run: |
+          echo "${{ env.CLANG_BASE }}/bin" >> $GITHUB_PATH
+          echo "${{ env.GCC_BASE }}/bin" >> $GITHUB_PATH
+
+      - name: Build Kernel and In-Tree Modules
+        run: |
+          echo -e "\n[INFO]: KERNEL BUILD STARTED..!\n"
+          
+          # Configure the kernel
+          make -C "${{ github.workspace }}" O="${{ github.workspace }}/out" ARCH=${{ env.ARCH }} ${{ inputs.defconfig }} || exit 1
+            
+          # Build the Image and all in-tree modules (Mali, VDSP, WLAN, etc.)
+          # Pass all necessary custom variables directly to the make command.
+          make -C "${{ github.workspace }}" \
+            O="${{ github.workspace }}/out" \
+            -j$(nproc) \
+            ARCH=${{ env.ARCH }} \
+            CROSS_COMPILE=${{ env.CROSS_COMPILE }} \
+            CC=${{ env.CC }} \
+            LD=${{ env.CLANG_BASE }}/bin/ld.lld \
+            LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- \
+            BSP_BUILD_ANDROID_OS=${{ env.BSP_BUILD_ANDROID_OS }} \
+            BSP_BUILD_FAMILY=${{ env.BSP_BUILD_FAMILY }} \
+            BSP_BUILD_DT_OVERLAY=${{ env.BSP_BUILD_DT_OVERLAY }} \
+            CONFIG_MALI_PLATFORM_NAME=${{ env.BSP_BOARD_NAME }} \
+            CONFIG_MALI_BOARD_PLATFORM=${{ env.BSP_BOARD_NAME }} \
+            BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE=${{ env.BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE }} \
+            BSP_BOARD_UNISOC_WCN_SOCKET=${{ env.BSP_BOARD_UNISOC_WCN_SOCKET }} \
+            BSP_BOARD_WLAN_DEVICE=${{ env.BSP_BOARD_WLAN_DEVICE }} \
+            Image modules || exit 1
+
+          echo -e "\n[INFO]: KERNEL BUILD FINISHED..!"
+
+      - name: Install In-Tree Kernel Modules
+        run: |
+          echo "[INFO]: Installing in-tree kernel modules..."
+          make -C "${{ github.workspace }}/out" \
+            ARCH=${{ env.ARCH }} \
+            INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" \
+            modules_install || exit 1
+
+      - name: Build and Install Out-of-Tree Modules
+        run: |
+          echo "[INFO]: Checking for and building known out-of-tree modules..."
+          
+          # --- TCS3430 Sensor Driver ---
+          TCS_DRIVER_PATH="${{ github.workspace }}/drivers/sensor/als/tcs3430"
+          if [ -f "$TCS_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found TCS3430 Makefile, building..."
+            export BSP_KERNEL_PATH="${{ github.workspace }}/out"
+            export BSP_MODULES_OUT="${{ github.workspace }}/out"
+            make -C "$TCS_DRIVER_PATH" modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/tcs3430" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> TCS3430 driver installed."
+          else
+            echo "--> TCS3430 Makefile not found, skipping."
+          fi
+          
+          # Add other out-of-tree modules here using the same pattern if needed
+
+      - name: Package Kernel and All Modules
+        run: |
+          echo "[INFO]: Packaging kernel artifacts..."
+          # Copy the kernel image
+          cp "${{ github.workspace }}/out/arch/${{ env.ARCH }}/boot/Image" "${{ github.workspace }}/build/Image"
+          
+          # Go to the modules installation directory
+          cd "${{ github.workspace }}/modules_out"
+          
+          # CRITICAL FIX: Remove recursive symlinks before zipping
+          echo "[INFO]: Removing 'source' and 'build' symlinks to prevent zip recursion..."
+          find . -type l -name "source" -delete
+          find . -type l -name "build" -delete
+          
+          # Create the zip archive of all modules
+          echo "[INFO]: Zipping all modules..."
+          zip -r9 "${{ github.workspace }}/build/modules-${{ github.run_id }}.zip" .
+          
+          echo "Kernel Image and Modules ZIP are ready in the 'build' directory."
+          ls -lR ${{ github.workspace }}/build
+
+      - name: Upload Kernel Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-build-${{ github.run_id }}
+          path: ${{ github.workspace }}/build/*
+          retention-days: 7
