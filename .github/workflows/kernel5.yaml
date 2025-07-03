@@ -159,10 +159,10 @@ jobs:
           export BSP_MODULES_OUT="${{ github.workspace }}/out"
           
           MODULE_LIST="
+          sprd_flash_drv:drivers/modules/common/camera/flash/flash_drv:NONE
           flash_ic_ocp8132:drivers/modules/common/camera/flash/ocp8132:NONE
           flash_ic_ocp8137:drivers/modules/common/camera/flash/ocp8137:NONE
           flash_ic_sc2703:drivers/modules/common/camera/flash/sc2703s:NONE
-          sprd_flash_drv:drivers/modules/common/camera/flash/flash_drv:NONE
           sprd_cpp:drivers/modules/common/camera/cpp:NONE
           sprd_fd:drivers/modules/common/camera/fd:NONE
           sprd_camera:drivers/modules/common/camera/core:NONE
