@@ -38,7 +38,7 @@ jobs:
       BSP_BUILD_ANDROID_OS: "y"
       BSP_BUILD_FAMILY: "sharkl5Pro"
       BSP_BOARD_CAMERA_MODULE_ISP_VERSION: "isp2.6"
-      BSP_BOARD_CAMERA_MODULE_CSI_VERSION: "csi_2.0"
+      BSP_BOARD_CAMERA_MODULE_CSI_VERSION: "receiver_r3p0"
       BSP_BOARD_CAMERA_MODULE_ISP_ADAPT_VERSION: "sharkl5Pro"
       BSP_BOARD_NAME: "sharkl5Pro"
       BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE: "Cadence"
@@ -46,6 +46,7 @@ jobs:
       BSP_BOARD_WLAN_DEVICE: "sc2355"
       BSP_BOARD_CAMERA_MODULE_CPP_VERSION: "lite_r6p0"
       BSP_BOARD_CAMERA_MODULE_FD_VERSION: "fd2.0"
+      BSP_KERNEL_VERSION: "kernel4.14"
       # This may need adjustment based on your device's configuration
       MALI_VOLTAGE_LEVEL: "1"
 
@@ -342,6 +343,88 @@ jobs:
             echo "--> SPRD FD driver installed."
           else
             echo "--> SPRD FD Makefile not found, skipping."
+          fi
+
+          # --- SPRD Flash Main Driver (MUST BE BUILT FIRST) ---
+          SPRD_FLASH_DRV_PATH="${{ github.workspace }}/drivers/modules/common/camera/flash/flash_drv"
+          if [ -f "$SPRD_FLASH_DRV_PATH/Makefile" ]; then
+            echo "--> Found SPRD Flash Main Driver Makefile, building..."
+            make -C "$SPRD_FLASH_DRV_PATH" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/sprd_flash_drv" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> SPRD Flash Main Driver installed."
+          else
+            echo "--> SPRD Flash Main Driver Makefile not found, skipping."
+          fi
+
+          # --- OCP8132 Flash IC Driver ---
+          FLASH_IC_DRIVER_PATH="${{ github.workspace }}/drivers/modules/common/camera/flash/ocp8132"
+          if [ -f "$FLASH_IC_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found OCP8132 Flash IC Makefile, building..."
+            make -C "$FLASH_IC_DRIVER_PATH" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/flash_ic_ocp8132" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> OCP8132 Flash IC driver installed."
+          else
+            echo "--> OCP8132 Flash IC Makefile not found, skipping."
+          fi
+
+          # --- OCP8137 Flash IC Driver ---
+          FLASH_IC_8137_DRIVER_PATH="${{ github.workspace }}/drivers/modules/common/camera/flash/ocp8137"
+          if [ -f "$FLASH_IC_8137_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found OCP8137 Flash IC Makefile, building..."
+            make -C "$FLASH_IC_8137_DRIVER_PATH" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              BSP_KERNEL_VERSION="kernel4.14" \
+              modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/flash_ic_ocp8137" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> OCP8137 Flash IC driver installed."
+          else
+            echo "--> OCP8137 Flash IC Makefile not found, skipping."
+          fi
+
+          # --- SC2703 Flash IC Driver ---
+          FLASH_IC_SC2703_DRIVER_PATH="${{ github.workspace }}/drivers/modules/common/camera/flash/sc2703s"
+          if [ -f "$FLASH_IC_SC2703_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found SC2703 Flash IC Makefile, building..."
+            make -C "$FLASH_IC_SC2703_DRIVER_PATH" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              BSP_KERNEL_VERSION="kernel4.14" \
+              modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/flash_ic_sc2703" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> SC2703 Flash IC driver installed."
+          else
+            echo "--> SC2703 Flash IC Makefile not found, skipping."
+          fi
+
+          # --- Multimedia DVFS Driver ---
+          MMDVFS_DRIVER_PATH="${{ github.workspace }}/drivers/modules/common/camera/mmdvfs"
+          if [ -f "$MMDVFS_DRIVER_PATH/Makefile" ]; then
+            echo "--> Found MM DVFS Makefile, building..."
+            make -C "$MMDVFS_DRIVER_PATH" \
+              LLVM=1 LLVM_IAS=1 ARCH="${{ env.ARCH }}" CC="${{ env.CC }}" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+              OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+              CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" \
+              CLANG_TRIPLE="aarch64-linux-gnu-" \
+              modules
+            make -C "${{ github.workspace }}/out" M="$BSP_MODULES_OUT/mmdvfs" INSTALL_MOD_PATH="${{ github.workspace }}/modules_out" modules_install
+            echo "--> MM DVFS driver installed."
+          else
+            echo "--> MM DVFS Makefile not found, skipping."
           fi
 
       - name: Package Kernel and All Modules
