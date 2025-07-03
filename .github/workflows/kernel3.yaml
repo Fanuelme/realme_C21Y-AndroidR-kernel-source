@@ -18,12 +18,20 @@ jobs:
       KERNEL_ROOT: ${{ github.workspace }}
       ARCH: arm64
       KBUILD_BUILD_USER: '@ravindu644'
+      
+      # Ccache Flags
+      USE_CCACHE: 1
+      CCACHE_EXEC: /usr/bin/ccache
 
       # Toolchain Paths
       CLANG_BASE: ${{ github.workspace }}/toolchains/clang-r383902b
-      GCC_BASE: ${{ github.workspace }}/toolchains/gcc
-      CROSS_COMPILE: ${{ github.workspace }}/toolchains/gcc/bin/aarch64-none-linux-gnu-
-      CC: ${{ github.workspace }}/toolchains/clang-r383902b/bin/clang
+      GCC_64_BASE: ${{ github.workspace }}/toolchains/aarch64
+      GCC_32_BASE: ${{ github.workspace }}/toolchains/arm
+
+      # Main Compiler and Cross-Compile Variables
+      CC: ccache clang
+      CROSS_COMPILE: ${{ github.workspace }}/toolchains/aarch64/bin/aarch64-linux-android-
+      CROSS_COMPILE_ARM32: ${{ github.workspace }}/toolchains/arm/bin/arm-linux-androideabi-
       
       # UNISOC Board-Specific Properties (used by Makefiles)
       BSP_BUILD_DT_OVERLAY: "y"
@@ -52,13 +60,24 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/toolchains
-          key: ${{ runner.os }}-toolchains-v3
+          key: ${{ runner.os }}-toolchains-lineage-v1
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-
 
       - name: Setup System Dependencies
         run: |
           echo "[INFO]: Installing system requirements..."
           sudo apt-get update
-          sudo apt-get install -y git device-tree-compiler lz4 xz-utils zlib1g-dev zip make gcc g++ python3 python-is-python3 libncurses-dev flex bison gperf libssl-dev libelf-dev kmod pahole zstd libyaml-dev --fix-missing
+          sudo apt-get install -y --fix-missing \
+            git device-tree-compiler lz4 xz-utils zlib1g-dev zip make gcc g++ \
+            python3 python-is-python3 libncurses-dev flex bison gperf libssl-dev \
+            libelf-dev kmod pahole zstd libyaml-dev ccache
 
       - name: Download and Set up Toolchains
         if: steps.cache-toolchains.outputs.cache-hit != 'true'
@@ -66,26 +85,31 @@ jobs:
           echo "[INFO] Setting up Toolchains..."
           cd "${{ github.workspace }}/toolchains"
           
-          echo "--> Downloading and extracting Clang..."
+          echo "--> Cloning Clang..."
           mkdir -p clang-r383902b
           wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/0e9e7035bf8ad42437c6156e5950eab13655b26c/clang-r383902b.tar.gz -O clang.tar.gz
-          tar -xf clang.tar.gz -C clang-r383902b
-          rm clang.tar.gz
+          tar -xf clang.tar.gz -C clang-r383902b && rm clang.tar.gz
           
-          echo "--> Downloading and extracting GCC..."
-          mkdir -p gcc
-          wget -q https://developer.arm.com/-/media/Files/downloads/gnu-a/10.3-2021.07/binrel/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu.tar.xz -O gcc.tar.xz
-          tar -xf gcc.tar.xz --strip-components=1 -C gcc
-          rm gcc.tar.xz
+          echo "--> Cloning aarch64 GCC..."
+          git clone --depth=1 https://github.com/rifsxd/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 -b lineage-19.1 aarch64
+
+          echo "--> Cloning arm GCC..."
+          git clone --depth=1 https://github.com/rifsxd/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 -b lineage-19.1 arm
 
           echo "--> Setting permissions..."
           chmod +x ${{ env.CLANG_BASE }}/bin/*
-          chmod +x ${{ env.GCC_BASE }}/bin/*
+          chmod +x ${{ env.GCC_64_BASE }}/bin/*
+          chmod +x ${{ env.GCC_32_BASE }}/bin/*
 
-      - name: Set up PATH for toolchains
+      - name: Set up PATH and ccache
         run: |
           echo "${{ env.CLANG_BASE }}/bin" >> $GITHUB_PATH
-          echo "${{ env.GCC_BASE }}/bin" >> $GITHUB_PATH
+          echo "${{ env.GCC_64_BASE }}/bin" >> $GITHUB_PATH
+          echo "${{ env.GCC_32_BASE }}/bin" >> $GITHUB_PATH
+          
+          echo "[INFO] Configuring ccache..."
+          ccache -M 5G
+          ccache -z
 
       - name: Build Kernel and In-Tree Modules
         run: |
@@ -97,10 +121,16 @@ jobs:
             O="${{ github.workspace }}/out" \
             -j$(nproc) \
             ARCH=${{ env.ARCH }} \
-            CROSS_COMPILE=${{ env.CROSS_COMPILE }} \
             CC=${{ env.CC }} \
-            LD=${{ env.CLANG_BASE }}/bin/ld.lld \
-            LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            CROSS_COMPILE=${{ env.CROSS_COMPILE }} \
+            CROSS_COMPILE_ARM32=${{ env.CROSS_COMPILE_ARM32 }} \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
             BSP_BUILD_ANDROID_OS=${{ env.BSP_BUILD_ANDROID_OS }} \
             BSP_BUILD_FAMILY=${{ env.BSP_BUILD_FAMILY }} \
             BSP_BUILD_DT_OVERLAY=${{ env.BSP_BUILD_DT_OVERLAY }} \
@@ -112,6 +142,7 @@ jobs:
             Image modules || exit 1
 
           echo -e "\n[INFO]: KERNEL BUILD FINISHED..!"
+          ccache -s
 
       - name: Install In-Tree Kernel Modules
         run: |
