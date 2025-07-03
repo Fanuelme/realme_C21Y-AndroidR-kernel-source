@@ -159,14 +159,14 @@ jobs:
           export BSP_MODULES_OUT="${{ github.workspace }}/out"
           
           MODULE_LIST="
-          sprd_sensor:drivers/modules/common/camera/sensor:NONE
-          sprd_camera:drivers/modules/common/camera/core:NONE
-          sprd_flash_drv:drivers/modules/common/camera/flash/flash_drv:NONE
           flash_ic_ocp8132:drivers/modules/common/camera/flash/ocp8132:NONE
           flash_ic_ocp8137:drivers/modules/common/camera/flash/ocp8137:NONE
           flash_ic_sc2703:drivers/modules/common/camera/flash/sc2703s:NONE
+          sprd_flash_drv:drivers/modules/common/camera/flash/flash_drv:NONE
           sprd_cpp:drivers/modules/common/camera/cpp:NONE
           sprd_fd:drivers/modules/common/camera/fd:NONE
+          sprd_camera:drivers/modules/common/camera/core:NONE
+          sprd_sensor:drivers/modules/common/camera/sensor:NONE
           mmdvfs:drivers/modules/common/camera/mmdvfs:NONE
           mali_gondul:drivers/modules/kernel4.14/gpu/gondul:MALI_PLATFORM_NAME=${BSP_BOARD_NAME} TARGET_BOARD_PLATFORM=${BSP_BOARD_NAME} TARGET_BOARD=${BSP_BOARD_NAME} VOLTAGE_CONTROLLER_LEVEL=${MALI_VOLTAGE_LEVEL}
           stmvl53l0:drivers/modules/kernel4.14/input/misc/vl53L0:NONE
@@ -217,14 +217,14 @@ jobs:
           export BSP_MODULES_OUT="${{ github.workspace }}/out"
           
           MODULE_LIST="
-          sprd_sensor:drivers/modules/common/camera/sensor
-          sprd_camera:drivers/modules/common/camera/core
-          sprd_flash_drv:drivers/modules/common/camera/flash/flash_drv
           flash_ic_ocp8132:drivers/modules/common/camera/flash/ocp8132
           flash_ic_ocp8137:drivers/modules/common/camera/flash/ocp8137
           flash_ic_sc2703:drivers/modules/common/camera/flash/sc2703s
+          sprd_flash_drv:drivers/modules/common/camera/flash/flash_drv
           sprd_cpp:drivers/modules/common/camera/cpp
           sprd_fd:drivers/modules/common/camera/fd
+          sprd_camera:drivers/modules/common/camera/core
+          sprd_sensor:drivers/modules/common/camera/sensor
           mmdvfs:drivers/modules/common/camera/mmdvfs
           mali_gondul:drivers/modules/kernel4.14/gpu/gondul
           stmvl53l0:drivers/modules/kernel4.14/input/misc/vl53L0
